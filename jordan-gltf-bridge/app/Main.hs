@@ -13,14 +13,24 @@ import Numeric.LinearAlgebra
 import Data.Complex
 import LegendreGLTF
 import JordanDecomposition
-import GodotBridge
+
+import GodotBridge -- GodotとglTF間の変換を行うブリッジ
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Lazy.Char8 as L8
+import qualified Data.ByteString as BS
+import Data.Aeson.Types (object, (.=))
+import Data.Text.Lazy.Encoding (decodeUtf8)
+import Data.Text.Lazy (toStrict)
 
 -- ■ ジョルダン分解用データ型
 data JordanBlock = JordanBlock
+    -- 固有値とサイズ、幾何的重複度を持つジョルダンブロック
   { eigenvalue :: Complex Double  -- 複素固有値も扱える
-  , size       :: Int
-  , geometric_mult :: Int         -- 幾何的重複度
+    , algebraic_mult :: Int          -- 代数的重複度
+    , size       :: Int
+    , geometric_mult :: Int         -- 幾何的重複度
   } deriving (Generic, Show)
+
 
 instance ToJSON JordanBlock
 instance FromJSON JordanBlock
@@ -30,6 +40,7 @@ data JordanDecomp = JordanDecomp
   , transform_matrix :: [[Complex Double]]  -- 変換行列 P
   , original_size   :: Int                  -- 元の行列のサイズ
   , compression_ratio :: Double             -- 圧縮率
+    -- 圧縮率は元の行列サイズとジョルダンブロック表現のサイズの比率
   } deriving (Generic, Show)
 
 instance ToJSON JordanDecomp
@@ -140,3 +151,4 @@ getCookies = do
   case cookie_header of
     Nothing -> return []
     Just cookies -> return $ parseCookies $ BS.pack $ show cookies
+GodotBridge -- GodotとglTF間の変換を行うブリッジ
