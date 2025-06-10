@@ -1,17 +1,13 @@
 cabal-version: 2.2
 
--- This file has been generated from package.yaml by hpack version 0.38.0.
---
--- see: https://github.com/sol/hpack
-
 name:           jordan-gltf-bridge
 version:        0.1.0.0
-description:    Please see the README on GitHub at <https://github.com/githubuser/jordan-gltf-bridge#readme>
-homepage:       https://github.com/githubuser/jordan-gltf-bridge#readme
-bug-reports:    https://github.com/githubuser/jordan-gltf-bridge/issues
-author:         Author name here
-maintainer:     example@example.com
-copyright:      2025 Author name here
+description:    Jordan decomposition bridge for glTF to Godot conversion
+homepage:       https://github.com/yourusername/jordan-gltf-bridge#readme
+bug-reports:    https://github.com/yourusername/jordan-gltf-bridge/issues
+author:         Your Name
+maintainer:     your.email@example.com
+copyright:      2025 Your Name
 license:        BSD-3-Clause
 license-file:   LICENSE
 build-type:     Simple
@@ -21,7 +17,7 @@ extra-source-files:
 
 source-repository head
   type: git
-  location: https://github.com/githubuser/jordan-gltf-bridge
+  location: https://github.com/yourusername/jordan-gltf-bridge
 
 library
   exposed-modules:
@@ -29,27 +25,40 @@ library
       LegendreGLTF
   other-modules:
       Paths_jordan_gltf_bridge
-  autogen-modules:
-      Paths_jordan_gltf_bridge
   hs-source-dirs:
       src
+  default-extensions:
+      OverloadedStrings
+      DeriveGeneric
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
-      base >=4.7 && <5
+      base >=4.17 && <5
+    , aeson >=2.0 && <3.0
+    , bytestring >=0.11 && <0.13
+    , containers >=0.6 && <0.8
+    , hmatrix >=0.20 && <0.21
+    , scientific >=0.3 && <0.4
+    , unordered-containers >=0.2 && <0.3
+    , vector >=0.12 && <0.14
+    , text >=1.2 && <3.0
+    , transformers >=0.5 && <0.7
   default-language: Haskell2010
 
 executable jordan-gltf-bridge-exe
   main-is: Main.hs
   other-modules:
       Paths_jordan_gltf_bridge
-  autogen-modules:
-      Paths_jordan_gltf_bridge
   hs-source-dirs:
       app
+  default-extensions:
+      OverloadedStrings
+      DeriveGeneric
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
+      base >=4.17 && <5
     , jordan-gltf-bridge
+    , aeson >=2.0 && <3.0
+    , bytestring >=0.11 && <0.13
   default-language: Haskell2010
 
 test-suite jordan-gltf-bridge-test
@@ -57,12 +66,15 @@ test-suite jordan-gltf-bridge-test
   main-is: Spec.hs
   other-modules:
       Paths_jordan_gltf_bridge
-  autogen-modules:
-      Paths_jordan_gltf_bridge
   hs-source-dirs:
       test
+  default-extensions:
+      OverloadedStrings
+      DeriveGeneric
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
+      base >=4.17 && <5
     , jordan-gltf-bridge
+    , hspec >=2.7 && <3.0
+    , QuickCheck >=2.14 && <3.0
   default-language: Haskell2010
