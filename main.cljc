@@ -26,14 +26,11 @@
   "Bucket sort using PriorityQueue for each bucket
    Returns map of bucket-key -> sorted PriorityQueue"
   [nodes bucket-fn]
-  (let [buckets (transient {})]
-    (doseq [node nodes]
-      (let [bucket-key (bucket-fn node)
-            queue (get buckets bucket-key
-                      (PriorityQueue. (create-distance-comparator)))]
-        (.add queue node)
-        (assoc! buckets bucket-key queue)))
-    (persistent! buckets)))
+  (->> (group-by bucket-fn nodes)
+       (map (fn [[k vs]]
+              [k (doto (PriorityQueue. (create-distance-comparator))
+                   (->> vs (run! #(.add ^PriorityQueue % %))))]))
+       (into {})))
 
 ;; --- Bucket functions (same as before but adapted) ---
 
