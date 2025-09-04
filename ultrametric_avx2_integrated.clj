@@ -21,17 +21,17 @@
   (filtration [this level]
     (let [mask-array (int-array 8 (int (Math/pow p-prime level)))]
       (IntVector/fromArray species mask-array 0)))
-  
+
   (connection [this op]
     (get operations op))
-  
+
   (p-adic-norm [this p]
     (fn [v]
       (let [abs-vals (.abs v)
             p-divisibility (.div abs-vals (IntVector/broadcast species p))]
         (.reduceLanes p-divisibility VectorOperators/ADD)))))
 
-(defn create-avx2-hodge-module 
+(defn create-avx2-hodge-module
   "AVX2 Hodge加群の生成"
   [p-prime]
   (let [species (IntVector/SPECIES_256)
@@ -66,7 +66,7 @@
               is-divisible-mask (.eq (.mul remainder p-vec) current)
               ;; 非ゼロ要素が「すべて」割り切れるか
               all-non-zeros-are-divisible (.allTrue is-divisible-mask non-zero-mask)]
-          
+
           (if (and (.anyTrue non-zero-mask) all-non-zeros-are-divisible)
             (recur remainder (inc valuation))
             valuation))))))
@@ -85,25 +85,25 @@
   [data p]
   (let [hodge-module (create-avx2-hodge-module p)
         species (:species hodge-module)
-        
+
         preprocessed (->> data
                           (map #(if (coll? %) % [%]))
                           (map #(take 8 (concat % (repeat 0))))
                           (map int-array)
                           (map #(IntVector/fromArray species % 0))
                           (vec)) ;; pmapで使うためにvecに変換
-        
+
         filtered-levels (for [level (range 5)]
-                         (let [filter-mask (filtration hodge-module level)]
-                           (mapv #(.and % filter-mask) preprocessed)))
-        
+                          (let [filter-mask (filtration hodge-module level)]
+                            (mapv #(.and % filter-mask) preprocessed)))
+
         distance-matrix (let [n (count preprocessed)]
-                         (vec (for [i (range n)]
-                                (vec (for [j (range n)]
-                                       (ultrametric-distance-avx2
+                          (vec (for [i (range n)]
+                                 (vec (for [j (range n)]
+                                        (ultrametric-distance-avx2
                                          (nth preprocessed i)
                                          (nth preprocessed j) p))))))]
-    
+
     {:original-data data
      :vectorized preprocessed
      :filtered-levels filtered-levels
@@ -120,7 +120,7 @@
   (let [shifted-right (.lanewise v VectorOperators/LSHR 1)
         shifted-left (.lanewise v VectorOperators/LSHL 1)
         gradient (.sub (.add shifted-right shifted-left)
-                      (.mul v (IntVector/broadcast species 2)))]
+                       (.mul v (IntVector/broadcast species 2)))]
     gradient))
 
 (defn find-critical-points-avx2
@@ -172,23 +172,23 @@
   "統合ウルトラメトリック解析 - リソースリーク修正"
   [data p & {:keys [parallel-level analysis-type]
              :or {parallel-level 4 analysis-type :full}}]
-  
+
   (let [pool (ForkJoinPool. parallel-level)]
     ;; BUG FIX 2: try...finallyでForkJoinPoolのシャットダウンを保証
     (try
       (let [;; Phase 1: ウルトラメトリック空間構築
             ultrametric-space (build-ultrametric-space data p)
-            
+
             ;; Phase 2: 離散モース解析
             critical-points (find-critical-points-avx2
-                              (:vectorized ultrametric-space) p)
+                             (:vectorized ultrametric-space) p)
             morse-complex (morse-complex-construction critical-points p)
-            
+
             ;; Phase 3: Witt消去（オプション）
             witt-result (when (#{:full :witt} analysis-type)
                           (parallel-witt-elimination
-                            (:distance-matrix ultrametric-space) p))
-            
+                           (:distance-matrix ultrametric-space) p))
+
             ;; 結果統合
             integrated-result {:ultrametric-space ultrametric-space
                                :morse-analysis {:critical-points critical-points
@@ -225,14 +225,14 @@
         species (IntVector/SPECIES_256)]
     (println "=== p進付値テスト (p=3) ===")
     (let [v1 (IntVector/broadcast species 9)]
-      (println "9の3進付値:" (p-adic-valuation v1 p)) ; 期待値: 2
-      )
+      (println "9の3進付値:" (p-adic-valuation v1 p))) ; 期待値: 2
+
     (let [v2 (IntVector/broadcast species 18)]
-      (println "18の3進付値:" (p-adic-valuation v2 p)) ; 期待値: 2
-      )
+      (println "18の3進付値:" (p-adic-valuation v2 p))) ; 期待値: 2
+
     (let [v3 (IntVector/broadcast species 5)]
-      (println "5の3進付値:" (p-adic-valuation v3 p)) ; 期待値: 0
-      )
+      (println "5の3進付値:" (p-adic-valuation v3 p))) ; 期待値: 0
+
     (let [v4 (IntVector/zero species)]
       (println "0の3進付値:" (p-adic-valuation v4 p))) ; 期待値: Integer/MAX_VALUE
     (let [v5 (IntVector/fromArray species (int-array [3 9 27 0 0 0 0 0]) 0)]
@@ -251,7 +251,7 @@
       (println "diff:" (vec (.toArray diff)))
       (println "diffの3進付値:" (p-adic-valuation diff p)) ; 期待値: 2 (9と18の付値の最小値)
       (println "距離:" (ultrametric-distance-avx2 v_a v_b p))) ; 期待値: 3^(-2) = 0.111...
-    
+
     (let [v_c (IntVector/broadcast species 5)
           v_d (IntVector/broadcast species 5)]
       (println "\n同じベクトルの距離:" (ultrametric-distance-avx2 v_c v_d p))))) ; 期待値: 0.0
@@ -264,7 +264,7 @@
     (println "\n=== 離散勾配テスト ===")
     (println "線形関数 [0,1,2,3,4,5,6,7]:")
     (println "勾配:" (vec (.toArray (discrete-gradient-avx2 linear-func species))))
-    
+
     (println "\n二次関数 [0,1,4,9,16,25,36,49]:")
     (println "勾配:" (vec (.toArray (discrete-gradient-avx2 quadratic-func species))))))
 
@@ -274,14 +274,14 @@
   (test-ultrametric-distance)
   ;; BUG FIX: テスト関数名を修正
   (test-discrete-gradient)
-  
+
   ;; 統合テスト
   (def test-data (vec (range 1 11)))
   (def result (ultrametric-analysis test-data 2
-                                  :parallel-level 2
-                                  :analysis-type :full))
-  (println result)
-  )
+                                    :parallel-level 2
+                                    :analysis-type :full))
+  (println result))
+
 ;; =============================================================================
 ;; スタブ関数の実装（変更なし）
 ;; =============================================================================
@@ -301,3 +301,7 @@
 (defn merge-elimination-results [r1 r2] (merge r1 r2))
 
 (defn partition-work-units [matrix] (partition-all 4 matrix))
+
+(mock/defmock partition-work-units-mock
+  [matrix]
+  (partition-all 4 matrix))
