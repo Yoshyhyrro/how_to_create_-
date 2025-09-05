@@ -2,8 +2,8 @@
   (:require [clojure.pprint :as pp]
             [clojure.core.reducers :as r])
   (:import [java.lang AutoCloseable]
-           [java.util.concurrent ForkJoinPool CompletableFuture]
-           [jdk.incubator.vector IntVector VectorSpecies VectorOperators]
+           [java.util.concurrent ForkJoinPool CompletableFuture TimeUnit]
+           [jdk.incubator.vector IntVector VectorSpecies VectorOperators LongVector]
            [java.lang.foreign Arena]))
 
 ;; =============================================================================
@@ -202,30 +202,30 @@
       (err t {} [{:level :error :message "データ準備エラー"}]))))
 
 (defn compute-distance-matrix-monadic [aligned-data p]
-  "モナドでのウルトラメトリック距離行列計算"
-  (mlet
-    [n (ok (count aligned-data))]
-    (let [results (make-array Double/TYPE n n)]
-      (mlet
-        [distances 
-         (reduce 
-           (fn [acc [i j]]
-             (bind acc 
-                   (fn [_]
-                     (mlet
-                       [vi (ok (nth aligned-data i))
-                        vj (ok (nth aligned-data j))
-                        diff (ok (.sub vi vj))
-                        val (p-adic-valuation-monadic diff p)]
-                       (let [distance (if (>= val Integer/MAX_VALUE) 0.0 (Math/pow p (- val)))]
-                         (aset results i j distance)
-                         (aset results j i distance)
-                         distance)))))
-           (ok nil)
-           (for [i (range n) j (range (inc i) n)] [i j]))]
-        {:distance-matrix results 
-         :dimensions [n n]
-         :p-prime p}))))
+  "モナドでのウルトラメトリック距離行列計算 - 戻り値バグを修正"
+  ;; BUG FIX 2: mletが正しいマップを返すように修正
+  (let [n (count aligned-data)
+        results (make-array Double/TYPE n n)]
+    (mlet [computation-result
+           (reduce
+             (fn [acc [i j]]
+               (bind acc
+                 (fn [_]
+                   (mlet [vi (ok (nth aligned-data i))
+                          vj (ok (nth aligned-data j))
+                          diff (ok (.sub vi vj))
+                          val-result (p-adic-valuation-monadic diff p)]
+                     (let [val (extract-value val-result)
+                           distance (if (>= val Integer/MAX_VALUE) 0.0 (Math/pow p (- val)))]
+                       (aset results i j distance)
+                       (aset results j i distance)
+                       (ok distance)))))) ; bindのためにokでラップ
+             (ok nil)
+             (for [i (range n) j (range (inc i) n)] [i j]))]
+      ;; mletの本体で最終的な結果マップを返す
+      (ok {:distance-matrix results
+           :dimensions [n n]
+           :p-prime p}))))
 
 ;; =============================================================================
 ;; Hodge理論のモナディック統合
@@ -286,8 +286,25 @@
          :hodge-module hodge-module
          :memory-arena arena}))))
 
+;; ヘルパー: 巡回シフトのためのシャッフルインデックスを生成
+(def ^:private shuffle-indices-right (memoize (fn [len] (into-array Integer (map #(mod (dec %) len) (range len))))))
+(def ^:private shuffle-indices-left (memoize (fn [len] (into-array Integer (map #(mod (inc %) len) (range len))))))
+
+(defn discrete-gradient-simple [v]
+  "正しい離散勾配（ラプラシアン）計算 - 論理バグを修正"
+  ;; BUG FIX 3: ビットシフトではなく要素の巡回シフトで計算
+  (try
+    (let [species (.species v)
+          len (.length v)
+          right-shifted (.rearrange v (.shuffle species (shuffle-indices-right len)))
+          left-shifted (.rearrange v (.shuffle species (shuffle-indices-left len)))
+          center-doubled (.mul v (IntVector/broadcast species 2))
+          gradient (.sub (.add left-shifted right-shifted) center-doubled)]
+      (ok gradient))
+    (catch Throwable t (err t))))
+
 (defn find-critical-points-monadic [vectorized p parallel-level]
-  "モナディッククリティカル点検出"
+  "モナディッククリティカル点検出 - スレッドプール使用バグを修正"
   (with-managed-resource
     (->ThreadPoolResource parallel-level)
     (fn [thread-pool]
@@ -295,42 +312,30 @@
         (let [chunk-size (max 1 (quot (count vectorized) parallel-level))
               chunks (partition-all chunk-size vectorized)
               
-              futures (mapv 
+              futures (mapv
                         (fn [chunk]
+                          ;; BUG FIX 1: 管理下のスレッドプールを指定
                           (CompletableFuture/supplyAsync
-                            #(keep 
+                            #(keep
                                (fn [v]
                                  (let [grad-result (discrete-gradient-simple v)
                                        val-result (p-adic-valuation-monadic v p)]
+                                   ;; 両方の計算が成功した場合のみ結果を返す
                                    (when (and (is-ok? grad-result) (is-ok? val-result))
                                      {:vector v
                                       :gradient (extract-value grad-result)
                                       :p-adic-valuation (extract-value val-result)})))
                                chunk)
-                            (.commonPool ForkJoinPool)))
+                            thread-pool)) ;; <-- ここを修正
                         chunks)
               
               results (mapcat #(.get ^CompletableFuture %) futures)]
-          (ok (vec results) 
+          (ok (vec results)
               {:critical-count (count results)
                :parallel-level parallel-level}
               [{:level :info :message (str (count results) "個のクリティカル点を検出")}]))
-        (catch Throwable t 
+        (catch Throwable t
           (err t {} [{:level :error :message "クリティカル点検出エラー"}]))))))
-
-(defn discrete-gradient-simple [v]
-  "簡易離散勾配計算"
-  (try
-    (let [species (.species v)
-          n (.length v)]
-      (if (< n 3)
-        (ok (.zero species))
-        (let [left-shift (.lanewise v VectorOperators/LSHR 1)
-              right-shift (.lanewise v VectorOperators/LSHL 1)
-              center-doubled (.lanewise v VectorOperators/LSHL 1)
-              gradient (.sub (.add left-shift right-shift) center-doubled)]
-          (ok gradient))))
-    (catch Throwable t (err t))))
 
 (defn parallel-witt-elimination-monadic [distance-matrix p parallel-level]
   "モナディック並列Witt消去"
