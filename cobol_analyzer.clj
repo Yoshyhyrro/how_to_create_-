@@ -5,10 +5,10 @@
   inspired by p-adic metrics. This implementation focuses on discovering naming
   patterns in COBOL variable names."
   (:require
-   [clojure.string :as str]
-   [cats.core :as m]
-   [cats.monad.state :as state]
-   [clojure.pprint :refer [pprint]]))
+    [clojure.string :as str]
+    [cats.core :as m]
+    [cats.monad.state :as state]
+    [clojure.pprint :refer [pprint]]))
 
 
 ;;;-----------------------------------------------------------------------------
@@ -16,34 +16,28 @@
 ;;;-----------------------------------------------------------------------------
 
 (defn tokenize-name
-  "Splits a COBOL-style variable name into a vector of string tokens.
-  Handles common delimiters like hyphens, periods, and underscores.
-  e.g., \"WS-CUST-ID\" -> [\"WS\" \"CUST\" \"ID\"]"
+  "Splits a COBOL-style variable name into a vector of string tokens."
   ^clojure.lang.IPersistentVector [^String s]
   (str/split s #"[.-_]"))
 
 (defn common-prefix-length
-  "Calculates the number of common leading tokens between two token vectors.
-  e.g., [\"A\" \"B\" \"C\"] and [\"A\" \"B\" \"D\"] -> 2"
+  "Calculates the number of common leading tokens between two token vectors."
   ^long [^clojure.lang.IPersistentVector v1 ^clojure.lang.IPersistentVector v2]
   (->> (map vector v1 v2)
        (take-while (fn [[x y]] (= x y)))
        count))
 
 (defn ultrametric-distance
-  "Calculates an ultrametric distance based on common prefix length.
-  The distance is defined as 1 / (p ^ (1 + prefix_length)), inspired by p-adic metrics.
-  A longer common prefix results in a smaller distance."
+  "Calculates an ultrametric distance based on common prefix length."
   ^double [^clojure.lang.IPersistentVector base-tokens
-           ^clojure.lang.IPersistentVector other-tokens
-           ^long p]
+            ^clojure.lang.IPersistentVector other-tokens
+            ^long p]
   (let [prefix-len (common-prefix-length base-tokens other-tokens)]
     (/ 1.0 (Math/pow p (inc prefix-len)))))
 
 (defn group-by-prefix-hierarchy
   "Groups a list of variable names into a hierarchy based on their ultrametric
-  distance from a given base variable. The result is a sequence of maps,
-  sorted from most specific (longest prefix) to least specific."
+  distance from a given base variable."
   [base-var var-names p]
   (let [base-tokens (tokenize-name base-var)]
     (->> var-names
@@ -61,19 +55,23 @@
 ;;; Advanced & Parallel Execution
 ;;;-----------------------------------------------------------------------------
 
+;; Helper function to modify state, as `state/modify` is not always available.
+;; This is the robust solution you correctly pointed out.
+(defn modify [f]
+  (state/state (fn [s] [nil (f s)])))
+
 (defn stateful-analysis
   "Wraps the analysis in a State monad to track progress metadata."
   [base-var variables p]
-  (state/run-state
-    (m/mlet [_        (state/modify #(update % :processed-vars (fnil + 0) (count variables)))
+  (state/run
+    (m/mlet [_        (modify #(update % :processed-vars (fnil + 0) (count variables)))
              clusters (m/return (group-by-prefix-hierarchy base-var variables p))
-             _        (state/modify #(assoc % :cluster-count (count clusters)))]
+             _        (modify #(assoc % :cluster-count (count clusters)))]
       (m/return clusters))
     {:processed-vars 0 :cluster-count 0}))
 
 (defn parallel-cobol-analysis
-  "Analyzes multiple base variables against a collection of all variables in parallel.
-  Returns a map from each base variable to its analysis result."
+  "Analyzes multiple base variables against a collection of all variables in parallel."
   [base-vars all-variables p]
   (->> base-vars
        (pmap #(vector % (group-by-prefix-hierarchy % all-variables p)))
@@ -121,5 +119,4 @@
 (comment
   (group-by-prefix-hierarchy "WS-CUST-ID" cobol-variables 2)
   (parallel-cobol-analysis base-patterns cobol-variables 2)
-  (stateful-analysis "WS-CUST-ID" cobol-variables 2)
-)
+  (stateful-analysis "WS-CUST-ID" cobol-variables 2))
