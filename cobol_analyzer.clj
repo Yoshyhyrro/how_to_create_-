@@ -6,8 +6,6 @@
   patterns in COBOL variable names."
   (:require
     [clojure.string :as str]
-    [cats.core :as m]
-    [cats.monad.state :as state]
     [clojure.pprint :refer [pprint]]))
 
 
@@ -27,54 +25,79 @@
        (take-while (fn [[x y]] (= x y)))
        count))
 
-(defn ultrametric-distance
-  "Calculates an ultrametric distance based on common prefix length."
+(defn p-adic-distance
+  "Calculates p-adic ultrametric distance: closer prefixes = smaller distance"
   ^double [^clojure.lang.IPersistentVector base-tokens
             ^clojure.lang.IPersistentVector other-tokens
             ^long p]
   (let [prefix-len (common-prefix-length base-tokens other-tokens)]
     (/ 1.0 (Math/pow p (inc prefix-len)))))
 
-(defn group-by-prefix-hierarchy
-  "Groups a list of variable names into a hierarchy based on their ultrametric
-  distance from a given base variable."
+(defn analyze-cobol-structure
+  "Cluster COBOL variables by p-adic distance hierarchy"
   [base-var var-names p]
   (let [base-tokens (tokenize-name base-var)]
     (->> var-names
-         (map (fn [var-name] {:name var-name :tokens (tokenize-name var-name)}))
-         (group-by (fn [item] (common-prefix-length base-tokens (:tokens item))))
-         (sort-by key >)
+         (map #(vector % (tokenize-name %)))
+         (group-by (fn [[_ tokens]] 
+                     (common-prefix-length base-tokens tokens)))
+         (sort-by first >)  ;; Sort by depth (deeper first)
          (map (fn [[depth items]]
                 {:depth depth
                  :distance (/ 1.0 (Math/pow p (inc depth)))
-                 :members (map :name items)
+                 :members (map first items)
                  :count (count items)})))))
 
 
 ;;;-----------------------------------------------------------------------------
-;;; Advanced & Parallel Execution
+;;; System-Level Architecture Discovery
 ;;;-----------------------------------------------------------------------------
 
-;; Helper function to modify state, as `state/modify` is not always available.
-;; This is the robust solution you correctly pointed out.
-(defn modify [f]
-  (state/state (fn [s] [nil (f s)])))
+(defn discover-system-hierarchy
+  "Discover complete system structure by analyzing multiple base patterns"
+  [all-variables base-patterns p]
+  (->> base-patterns
+       (pmap (fn [base-pattern]
+               (let [matching-vars (filter #(str/starts-with? % base-pattern) 
+                                          all-variables)]
+                 (when (seq matching-vars)
+                   {:pattern base-pattern
+                    :subsystem-size (count matching-vars)
+                    :internal-structure (analyze-cobol-structure 
+                                        (first matching-vars) matching-vars p)}))))
+       (remove nil?)
+       (sort-by :subsystem-size >)))
 
-(defn stateful-analysis
-  "Wraps the analysis in a State monad to track progress metadata."
-  [base-var variables p]
-  (state/run
-    (m/mlet [_        (modify #(update % :processed-vars (fnil + 0) (count variables)))
-             clusters (m/return (group-by-prefix-hierarchy base-var variables p))
-             _        (modify #(assoc % :cluster-count (count clusters)))]
-      (m/return clusters))
-    {:processed-vars 0 :cluster-count 0}))
+(defn enterprise-cobol-analysis
+  "Automatically discover base patterns and analyze at scale"
+  [all-variables p threshold]
+  (let [;; Extract potential base patterns from variable prefixes
+        base-candidates (->> all-variables
+                            (map tokenize-name)
+                            (mapcat #(take 2 %))  ; Consider 1-2 token prefixes
+                            frequencies
+                            (filter #(>= (second %) threshold))  ; Min occurrence threshold
+                            (map first))
+        
+        ;; Analyze each significant pattern
+        analysis-results (discover-system-hierarchy all-variables base-candidates p)]
+    
+    {:total-variables (count all-variables)
+     :base-patterns-found (count base-candidates)
+     :major-subsystems (take 10 analysis-results)
+     :coverage-ratio (/ (apply + (map :subsystem-size analysis-results))
+                       (count all-variables))}))
+
+
+;;;-----------------------------------------------------------------------------
+;;; Parallel Analysis for Multiple Base Variables
+;;;-----------------------------------------------------------------------------
 
 (defn parallel-cobol-analysis
   "Analyzes multiple base variables against a collection of all variables in parallel."
   [base-vars all-variables p]
   (->> base-vars
-       (pmap #(vector % (group-by-prefix-hierarchy % all-variables p)))
+       (pmap #(vector % (analyze-cobol-structure % all-variables p)))
        (into {})))
 
 
@@ -90,8 +113,16 @@
    "DB-CONNECT" "DB-CURSOR" "FILE-INPUT" "FILE-OUTPUT"])
 
 (def base-patterns
-  "A sample list of prefixes to drive the parallel analysis."
-  ["WS-CUST" "WS-ORDER" "PRINT" "DB" "FILE"])
+  "Base patterns for system hierarchy discovery."
+  ["WS-CUST" "WS-ACCT" "WS-ORDER" "DB-" "PRINT-" "ERR-"])
+
+(def enterprise-sample-variables
+  "Larger sample for enterprise analysis demonstration."
+  (concat cobol-variables
+          ["WS-ACCT-BALANCE" "WS-ACCT-TYPE" "WS-ACCT-STATUS"
+           "ERR-MSG-TEXT" "ERR-CODE" "ERR-MODULE-ID"
+           "DB-CUSTOMER-TBL-ID" "DB-CUSTOMER-TBL-NAME"
+           "DB-TRANSACT-HST-ID" "DB-TRANSACT-HST-DATE"]))
 
 
 (defn -main
@@ -102,21 +133,49 @@
   (println "=====================================================")
 
   (println "\n--- 1. Single Base Variable Analysis ('WS-CUST-ID') ---")
-  (pprint (group-by-prefix-hierarchy "WS-CUST-ID" cobol-variables 2))
+  (pprint (analyze-cobol-structure "WS-CUST-ID" cobol-variables 2))
 
-  (println "\n--- 2. Parallel Analysis of Multiple Base Patterns ---")
-  (pprint (parallel-cobol-analysis base-patterns cobol-variables 2))
+  (println "\n--- 2. Distance Calculation Examples ---")
+  (let [base ["WS" "CUST" "ID"]
+        vars [["WS" "CUST" "NAME"]    ;; prefix=2 → distance=1/8
+              ["WS" "ORDER" "ID"]     ;; prefix=1 → distance=1/4  
+              ["PRINT" "HEADER"]]]    ;; prefix=0 → distance=1/2
+    (println "Distance calculations with p=2:")
+    (doseq [[var-tokens expected] (map vector vars [0.125 0.25 0.5])]
+      (let [distance (p-adic-distance base var-tokens 2)]
+        (println (format "  %s -> %.3f (expected: %.3f)" 
+                        var-tokens distance expected)))))
 
-  (println "\n--- 3. Stateful Analysis Example ---")
-  (let [[result final-state] (stateful-analysis "WS-CUST-ID" cobol-variables 2)]
-    (println "Final State:" final-state)
-    (println "Result:")
-    (pprint result))
+  (println "\n--- 3. System Hierarchy Discovery ---")
+  (pprint (discover-system-hierarchy enterprise-sample-variables 
+                                   ["WS-CUST" "WS-ACCT" "DB-" "ERR-"] 2))
+
+  (println "\n--- 4. Enterprise-Scale Analysis ---")
+  (pprint (enterprise-cobol-analysis enterprise-sample-variables 2 2))
+
+  (println "\n--- 5. Parallel Analysis of Multiple Base Patterns ---")
+  (pprint (parallel-cobol-analysis ["WS-CUST-ID" "PRINT-HEADER" "DB-CONNECT"] 
+                                  cobol-variables 2))
 
   (println "\nAnalysis complete."))
 
 ;; REPL-friendly entry points
 (comment
-  (group-by-prefix-hierarchy "WS-CUST-ID" cobol-variables 2)
-  (parallel-cobol-analysis base-patterns cobol-variables 2)
-  (stateful-analysis "WS-CUST-ID" cobol-variables 2))
+  ;; Basic analysis
+  (analyze-cobol-structure "WS-CUST-ID" cobol-variables 2)
+  
+  ;; Distance examples from the article
+  (let [base ["WS" "CUST" "ID"]]
+    (map #(p-adic-distance base % 2) 
+         [["WS" "CUST" "NAME"] ["WS" "ORDER" "ID"] ["PRINT" "HEADER"]]))
+  
+  ;; System hierarchy discovery
+  (discover-system-hierarchy enterprise-sample-variables 
+                           ["WS-CUST" "WS-ACCT" "DB-" "ERR-"] 2)
+  
+  ;; Enterprise analysis
+  (enterprise-cobol-analysis enterprise-sample-variables 2 2)
+  
+  ;; Parallel analysis
+  (parallel-cobol-analysis ["WS-CUST-ID" "PRINT-HEADER"] cobol-variables 2)
+)
