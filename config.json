@@ -1,0 +1,54 @@
+{
+  "api_config": {
+    "world_bank": {
+      "base_url": "https://api.worldbank.org/v2",
+      "timeout": 30,
+      "cache_ttl_hours": 168,
+      "enabled": true
+    },
+    "destatis": {
+      "base_url": "https://www-genesis.destatis.de/genesisWS/rest/2020Nov19",
+      "username": null,
+      "password": null,
+      "cache_ttl_hours": 168,
+      "enabled": false,
+      "note": "Requires registration at destatis.de"
+    },
+    "statswiss": {
+      "base_url": "https://www.bfs.admin.ch/bfsxls/en/",
+      "cache_ttl_hours": 168,
+      "enabled": false,
+      "note": "Primarily file-based; check manual API"
+    },
+    "japan_cao": {
+      "base_url": "https://www.esri.cao.go.jp/jp/sna/",
+      "cache_ttl_hours": 168,
+      "enabled": false,
+      "note": "Needs scraping or manual download"
+    },
+    "ine_spain": {
+      "base_url": "https://www.ine.es/jaxiT3/data.htm",
+      "cache_ttl_hours": 168,
+      "enabled": false
+    }
+  },
+  "data_validation": {
+    "min_gdp_billion": 0.1,
+    "max_gdp_billion": 20000,
+    "min_population_million": 0.01,
+    "max_population_million": 1500,
+    "valid_languages": ["German", "Japanese", "Spanish"],
+    "valid_countries": ["Germany", "Austria", "Switzerland", "Japan", "Spain", "Mexico"],
+    "year_range": [1990, 2024]
+  },
+  "cache": {
+    "type": "sqlite",
+    "path": "./cache/language_gdp.db",
+    "clear_on_start": false
+  },
+  "output": {
+    "format": "csv",
+    "path": "./data/processed/language_gdp_combined.csv",
+    "overwrite": true
+  }
+}
